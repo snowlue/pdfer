@@ -216,7 +216,7 @@ class Interface:
         input_pdf = Interface.get_pdf_file()
         if not input_pdf:
             return Interface.start()
-        pages = session.prompt('Введи страницы: ', validator=Validators.range_)
+        pages = session.prompt('Введи страницы: ', completer=WordCompleter([]), validator=Validators.range_)
         if pages in COMMANDS['exit']:
             return Interface.start()
         try:
@@ -245,12 +245,14 @@ class Interface:
         input_pdf = Interface.get_pdf_file()
         if not input_pdf:
             return Interface.start()
-        start_page = session.prompt('Введи начальную страницу: ', validator=Validators.int_)
+        start_page = session.prompt(
+            'Введи начальную страницу: ', completer=WordCompleter([]), validator=Validators.int_
+        )
         if start_page in COMMANDS['exit']:
             return Interface.start()
         else:
             start_page = int(start_page)
-        end_page = session.prompt('Введи конечную страницу: ', validator=Validators.int_)
+        end_page = session.prompt('Введи конечную страницу: ', completer=WordCompleter([]), validator=Validators.int_)
         if end_page in COMMANDS['exit']:
             return Interface.start()
         else:
@@ -269,7 +271,7 @@ class Interface:
         if not input_pdf:
             return Interface.start()
 
-        page_number = session.prompt('Введи страницу: ', validator=Validators.int_)
+        page_number = session.prompt('Введи страницу: ', completer=WordCompleter([]), validator=Validators.int_)
         if page_number in COMMANDS['exit']:
             return Interface.start()
         else:
@@ -310,10 +312,11 @@ class Interface:
         )
         if not file_name:
             return Interface.start()
-        if file_name.endswith('.pdf'):
-            file_name = file_name.removesuffix('.pdf') + ' [PDFer].pdf'
-        else:
-            file_name = file_name + ' [PDFer].pdf'
+        if file_name == os.path.basename(file_name):
+            base_path = os.path.dirname(input_pdfs[0])
+            if all(os.path.dirname(file) == base_path for file in input_pdfs[1:]):
+                file_name = os.path.join(base_path, file_name)
+        file_name = file_name.removesuffix('.pdf') + ' [PDFer].pdf'
         PDFer.merge_pdfs(input_pdfs, file_name)
         console.print(f'[on dark_green]PDF-файлы успешно склеены в файл {file_name}![/on dark_green]')
 
@@ -335,7 +338,7 @@ class Interface:
                     ),
                     end='\n\n' if paragraph.endswith('\n') else '\n',
                 )
-            print('\n')
+            print()
             if ACTIONS_MATRIX[action]['flags']['help_about_exit']:
                 text = 'Для возврата в главное меню на любом этапе напишите ' + ', '.join(COMMANDS['exit'])
                 print(
@@ -343,7 +346,8 @@ class Interface:
                         [textwrap.indent(row.ljust(columns - 5), '  │  ') for row in textwrap.wrap(text, columns - 5)]
                     )
                 )
-            console.print('\nНажми [i]Enter[/i] для продолжения или [i]Ctrl-C[/i] для выхода из справки...', end='')
+                print()
+            console.print('Нажми [i]Enter[/i] для продолжения или [i]Ctrl-C[/i] для выхода из справки...', end='')
             try:
                 input()
             except KeyboardInterrupt:
@@ -449,7 +453,7 @@ ACTIONS_MATRIX = {
         'action': Interface.merge,
         'flags': {'help_about_exit': True},
         'help': [
-            'Склеивает несколько PDF-файлов в один общий. Порядок склеивания определяется введённым списком PDF-файлов. Новый файл создаётся в той же папке, что и этот модуль, если во введённом имени выходного файла не указан путь.\n',
+            'Склеивает несколько PDF-файлов в один общий. Порядок склеивания определяется введённым списком PDF-файлов. Если во введённом имени выходного файла не указан путь, то новый файл со склеенными PDF создаётся в той же папке, что и все файлы, если они расположены в одном месте — иначе в той же папке, что и этот модуль.\n',
             '– Вводи имена PDF-файлов, которые хочешь склеить, по одному, нажимая Enter после каждого.',
             '– Как только закончишь, нажмите Enter с пустой строкой, ничего не вводя.',
             '– В конце введи имя выходного PDF-файла.',
@@ -478,7 +482,7 @@ def main():
     elif __loader__.name != os.path.basename(__file__).removesuffix('.py'):  # не запущен как модуль через флаг -m
         if len(sys.argv) == 1:  # не запущен через python
             return Interface.start()
-    
+
     # TODO: здесь через argparse опишу логику для запуска с параметрами командной строки
     # TODO: --extract file.pdf a-b,c,d-f
     # TODO: --merge file1.pdf file2.pdf file3.pdf new_file.pdf

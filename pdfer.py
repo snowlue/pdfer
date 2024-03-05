@@ -320,6 +320,7 @@ class Interface:
         PDFer.merge_pdfs(input_pdfs, file_name)
         console.print(f'[on dark_green]PDF-файлы успешно склеены в файл {file_name}![/on dark_green]')
 
+    @override_keyboard_interrupt
     @staticmethod
     def help():
         """Отрисовывает помощь по программе"""
@@ -348,12 +349,10 @@ class Interface:
                 )
                 print()
             console.print('Нажми [i]Enter[/i] для продолжения или [i]Ctrl-C[/i] для выхода из справки...', end='')
-            try:
-                input()
-            except KeyboardInterrupt:
-                return Interface.start()
+            input()
         Interface.start()
 
+    @override_keyboard_interrupt
     @staticmethod
     def about():
         """Отрисовывает информацию о разработчике"""
@@ -394,8 +393,7 @@ class Interface:
             f'[grey66]© {datetime.now().year}, Pavel Ovchinnikov[/grey66]',
         )
         console.print(raw.center(columns).replace(raw, styled), end='')
-        with suppress(KeyboardInterrupt):
-            input()
+        input()
         Interface.start()
 
     @staticmethod

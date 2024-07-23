@@ -29,10 +29,10 @@ def import_or_install_module(module_name: str):
         globals()[module_name.replace('-', '_')] = importlib.import_module(module_name.replace('-', '_'))
     except ModuleNotFoundError:
         print(f'{module_name} не установлен в Python. Установка...')
-        os.system(f'python -m pip install {module_name} > {os.devnull} 2>&1')
+        os.system(f'python3 -m pip install {module_name} > {os.devnull} 2>&1')
         globals()[module_name.replace('-', '_')] = importlib.import_module(module_name.replace('-', '_'))
 
-
+clear()
 import_or_install_module('inquirer')
 from inquirer.errors import ValidationError  # noqa: E402
 

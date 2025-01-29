@@ -4,7 +4,6 @@ import re
 import shutil
 import sys
 import textwrap
-from contextlib import suppress
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -29,10 +28,13 @@ def import_or_install_module(module_name: str):
         globals()[module_name.replace('-', '_')] = importlib.import_module(module_name.replace('-', '_'))
     except ModuleNotFoundError:
         print(f'{module_name} не установлен в Python. Установка...')
-        os.system(f'python3 -m pip install {module_name} > {os.devnull} 2>&1')
+        if os.name == 'nt':
+            os.system(f'py -m pip install {module_name} > {os.devnull} 2>&1')
+        else:
+            os.system(f'python3 -m pip install --break-system-packages {module_name} > {os.devnull} 2>&1')
         globals()[module_name.replace('-', '_')] = importlib.import_module(module_name.replace('-', '_'))
 
-clear()
+
 import_or_install_module('inquirer')
 from inquirer.errors import ValidationError  # noqa: E402
 
@@ -54,7 +56,7 @@ class PDFer:
     """Класс, формирующий основной функционал программы"""
 
     @staticmethod
-    def extract_page_range(input_pdf: str, start_page: int, end_page: int = -1, output_pdf: str = ''):
+    def extract_page_range(input_pdf: str, start_page: int, end_page: int = -1, output_pdf: str = '') -> str:
         """Извлекает страницы из PDF-файла `input_pdf` в диапазоне от `start_page`
         до `end_page` включительно и сохраняет их в новый PDF-файл\n
         Если `end_page` не указана, то извлекается только одна страница `start_page`"""
@@ -66,11 +68,13 @@ class PDFer:
                 end_page = start_page
 
             order, shift = (1, 0) if start_page <= end_page else (-1, -2)
-            for page_num in range(max(0, start_page - 1), min(end_page, len(reader.pages)) + shift, order):
+            start_page = max(0, start_page - 1)
+            end_page = min(end_page, len(reader.pages)) + shift
+            for page_num in range(start_page, end_page, order):
                 writer.add_page(reader.pages[page_num])
 
         output_pdf = (output_pdf or input_pdf.removesuffix('.pdf')) + (
-            (f'_{start_page}' if start_page == end_page else f'_{start_page}-{end_page}') + ' [PDFer].pdf'
+            (f'_{start_page + 1}' if start_page == end_page else f'_{start_page + 1}-{end_page}') + ' [PDFer].pdf'
         )
         with open(output_pdf, 'wb') as output_file:
             writer.write(output_file)
@@ -78,6 +82,7 @@ class PDFer:
 
     @staticmethod
     def parse_page_ranges(page_ranges_str: str):
+        """Парсит строку `page_ranges_str` с диапазонами страниц в формате '1-5, 8, 11-13'"""
         page_ranges = []
         for part in page_ranges_str.replace(' ', '').split(','):
             if '-' in part:
@@ -133,9 +138,12 @@ class Validators:
 class Interface:
     """Класс, формирующий интерфейс программы"""
 
+    last_option = None
+
     @staticmethod
-    def header(columns: int, full=False, compact=False):
-        """Отрисовывает хедер программы в консоли"""
+    def draw_header(full=False, compact=False):
+        """Очищает консоль и отрисовывает хедер программы в консоли"""
+        columns = shutil.get_terminal_size().columns
         clear()
         console.print('[blue]┌' + '─' * (columns - 2) + '┐')
         if not compact:
@@ -143,7 +151,7 @@ class Interface:
         console.print('[blue]│[/blue][red]' + 'PDFer'.center(columns - 2) + '[/red][blue]│')
         if not compact:
             if full:
-                console.print('[blue]│[/blue]' + 'c любовью от PaveTranquil 💙'.center(columns - 3) + '[blue]│')
+                console.print('[blue]│[/blue]' + 'c любовью от snowlue 💙'.center(columns - 3) + '[blue]│')
                 console.print('[blue]│' + ' ' * (columns - 2) + '│')
                 console.print(
                     '[blue]│[/blue]'
@@ -166,23 +174,25 @@ class Interface:
         return wrapper
 
     @staticmethod
-    def start():
+    def start():  # type: ignore
         """Запускает интерфейс программы"""
-        Interface.header(shutil.get_terminal_size().columns, True)
+        Interface.draw_header(full=True)
         questions = [
             inquirer.List(
                 'choice',
                 message='Выбери действие',
                 choices=MENU,
-                carousel=True,
+                default=Interface.last_option,
                 validate=Validators.menu,  # type: ignore
+                carousel=True,
             )
         ]
         answers = inquirer.prompt(questions)
         try:
+            Interface.last_option = answers['choice']
             ACTIONS_MATRIX[answers['choice']]['action']()
         except TypeError:
-            return Interface.exit()
+            return Interface.draw_exit()
 
     @staticmethod
     def get_pdf_file(pass_enter: bool = False, prompt_text: str = '', completer_list: set = set()) -> str | None:
@@ -212,7 +222,7 @@ class Interface:
     @staticmethod
     def extract_many():
         """Интерфейс для извлечения набора страниц из PDF-файла"""
-        Interface.header(shutil.get_terminal_size().columns)
+        Interface.draw_header()
         input_pdf = Interface.get_pdf_file()
         if not input_pdf:
             return Interface.start()
@@ -225,23 +235,26 @@ class Interface:
             shutil.rmtree('temp')
             os.mkdir('temp')
 
-        files = []
+        files: list[str] = []
         for page_range in PDFer.parse_page_ranges(pages):
             files.append(
                 PDFer.extract_page_range(input_pdf, *page_range, output_pdf=f'temp/{os.path.basename(input_pdf)}')
             )
+        pages = ','.join([file.rsplit('_')[1].split(' ')[0] for file in files])
 
         file_name = f'{input_pdf.removesuffix(".pdf")}_{pages} [PDFer].pdf'
         PDFer.merge_pdfs(files, file_name)
         shutil.rmtree('temp')
         file_name = basename if (basename := os.path.basename(file_name)) in os.listdir() else file_name
         console.print(f'[on dark_green]Диапазоны страниц успешно извлечены в файл {file_name}![/on dark_green]')
+        input()
+        Interface.start()
 
     @override_keyboard_interrupt
     @staticmethod
     def extract_range():
         """Интерфейс для извлечения одного диапазона страниц из PDF-файла"""
-        Interface.header(shutil.get_terminal_size().columns)
+        Interface.draw_header()
         input_pdf = Interface.get_pdf_file()
         if not input_pdf:
             return Interface.start()
@@ -261,12 +274,14 @@ class Interface:
         file_name = PDFer.extract_page_range(input_pdf, start_page, end_page)
         file_name = basename if (basename := os.path.basename(file_name)) in os.listdir() else file_name
         console.print(f'[on dark_green]Диапазон страниц успешно извлечён в файл {file_name}![/on dark_green]')
+        input()
+        Interface.start()
 
     @override_keyboard_interrupt
     @staticmethod
-    def extract_page():
+    def extract_single():
         """Интерфейс для извлечения одной страницы из PDF-файла"""
-        Interface.header(shutil.get_terminal_size().columns)
+        Interface.draw_header()
         input_pdf = Interface.get_pdf_file()
         if not input_pdf:
             return Interface.start()
@@ -280,6 +295,8 @@ class Interface:
         file_name = PDFer.extract_page_range(input_pdf, page_number)
         file_name = basename if (basename := os.path.basename(file_name)) in os.listdir() else file_name
         console.print(f'[on dark_green]Страница успешно извлечена в файл {file_name}![/on dark_green]')
+        input()
+        Interface.start()
 
     @override_keyboard_interrupt
     @staticmethod
@@ -287,7 +304,7 @@ class Interface:
         """Интерфейс для склеивания нескольких PDF-файлов в один"""
         not_enough = False
         while True:
-            Interface.header(shutil.get_terminal_size().columns)
+            Interface.draw_header()
             input_pdfs = []
             if not_enough:
                 console.print('[on dark_red]Недостаточно PDF-файлов для склеивания![/on dark_red]', end='\n\n')
@@ -319,15 +336,18 @@ class Interface:
         file_name = file_name.removesuffix('.pdf') + ' [PDFer].pdf'
         PDFer.merge_pdfs(input_pdfs, file_name)
         console.print(f'[on dark_green]PDF-файлы успешно склеены в файл {file_name}![/on dark_green]')
+        input()
+        Interface.start()
 
     @override_keyboard_interrupt
     @staticmethod
-    def help():
+    def draw_help():
         """Отрисовывает помощь по программе"""
         columns = shutil.get_terminal_size().columns
+
         for action in ACTIONS_MATRIX.keys():
             help_info = ACTIONS_MATRIX[action]['help']
-            Interface.header(columns, compact=True)
+            Interface.draw_header(compact=True)
             console.print(f'[b]> {action}[/b]')
             for paragraph in help_info:
                 print(
@@ -354,7 +374,7 @@ class Interface:
 
     @override_keyboard_interrupt
     @staticmethod
-    def about():
+    def draw_about():
         """Отрисовывает информацию о разработчике"""
         empty_line = lambda: console.print('[gold1]║' + ' ' * (columns - 2) + '║')
 
@@ -363,9 +383,8 @@ class Interface:
 
         console.print('[gold1]╔' + '═' * (columns - 2) + '╗')
         empty_line()
-        empty_line()
         console.print('[gold1]║[/gold1][red3]' + 'PDFer'.center(columns - 2) + '[/red3][gold1]║')
-        console.print('[gold1]║[/gold1]' + 'c любовью от PaveTranquil 💙'.center(columns - 3) + '[gold1]║')
+        console.print('[gold1]║[/gold1]' + 'c любовью от snowlue 💙'.center(columns - 3) + '[gold1]║')
         empty_line()
         raw, styled = (
             'Никогда ещё работа с PDF не была настолько простой и быстрой!',
@@ -373,18 +392,32 @@ class Interface:
         )
         console.print('[gold1]║[/gold1]' + raw.center(columns - 2).replace(raw, styled) + '[gold1]║')
         empty_line()
-        empty_line()
         console.print('[gold1]╠' + '═' * (columns - 2) + '╣')
         empty_line()
         empty_line()
         raw, styled = 'Разработчик:  Павел Овчинников', '[blink]Разработчик:  Павел Овчинников[/blink]'
         console.print('[gold1]║[/gold1]' + raw.center(columns - 2).replace(raw, styled) + '[gold1]║')
         empty_line()
-        raw, styled = (
-            'VK   |   Telegram   |   GitHub',
-            '[dodger_blue2][link=https://vk.com/pavetranquil]VK[/link][/dodger_blue2]   |   [deep_sky_blue1][link=https://t.me/pavetranquil]Telegram[/link][/deep_sky_blue1]   |   [link=https://github.com/pavetranquil][bright_white]GitHub[/bright_white][/link]',
-        )
-        console.print('[gold1]║[/gold1]' + raw.center(columns - 2).replace(raw, styled) + '[gold1]║')
+
+        if os.name == 'nt':
+            raw, styled = (
+                'VK   |   Telegram   |   GitHub',
+                '[dodger_blue2][link=https://vk.com/snowlue]VK[/link][/dodger_blue2]   |   [deep_sky_blue1][link=https://t.me/snowlue]Telegram[/link][/deep_sky_blue1]   |   [link=https://github.com/snowlue][bright_white]GitHub[/bright_white][/link]',
+            )
+            console.print('[gold1]║[/gold1]' + raw.center(columns - 2).replace(raw, styled) + '[gold1]║')
+        else:
+            raw, styled = (
+                ' VK' + ' ' * 12 + '│' + ' ' * 8 + 'Telegram' + ' ' * 8 + '│' + ' ' * 12 + 'GitHub',
+                ' [dodger_blue2]VK[/dodger_blue2]'
+                + ' ' * 12 + '│' + ' ' * 8
+                + '[deep_sky_blue1]Telegram[/deep_sky_blue1]'
+                + ' ' * 8 + '│' + ' ' * 12
+                + '[bright_white]GitHub[/bright_white]',
+            )
+            console.print('[gold1]║[/gold1]' + raw.center(columns - 2).replace(raw, styled) + '[gold1]║')
+            links = 'https://vk.com/snowlue  │  https://t.me/snowlue  │  https://github.com/snowlue'
+            console.print('[gold1]║[/gold1]' + links.center(columns - 2) + '[gold1]║')
+
         empty_line()
         empty_line()
         console.print('[gold1]╚' + '═' * (columns - 2) + '╝', end='\n\n')
@@ -397,12 +430,11 @@ class Interface:
         Interface.start()
 
     @staticmethod
-    def exit():
+    def draw_exit():
         """Отрисовывает завершение программы"""
-        columns = shutil.get_terminal_size().columns
-        Interface.header(columns)
+        Interface.draw_header()
         console.print('    [u]Жду твоего возвращения![/u] 👋🏼', justify='center')
-        sys.exit(1)
+        sys.exit(0)
 
 
 class Separator:
@@ -418,7 +450,7 @@ class Separator:
 COMMANDS = {'exit': ['exit', 'выход', 'выйти', 'quit', 'q']}
 
 ACTIONS_MATRIX = {
-    'Извлечь набор страниц из PDF-файла': {
+    ' Извлечь набор страниц из PDF-файла': {
         'action': Interface.extract_many,
         'flags': {'help_about_exit': True},
         'help': [
@@ -428,7 +460,7 @@ ACTIONS_MATRIX = {
             '– Затем введи диапазоны страниц через запятую.',
         ],
     },
-    'Извлечь один диапазон страниц из PDF-файла': {
+    ' Извлечь один диапазон страниц из PDF-файла': {
         'action': Interface.extract_range,
         'flags': {'help_about_exit': True},
         'help': [
@@ -438,8 +470,8 @@ ACTIONS_MATRIX = {
             '– И в конце введи конечную страницу.',
         ],
     },
-    'Извлечь одну страницу из PDF-файла': {
-        'action': Interface.extract_page,
+    ' Извлечь одну страницу из PDF-файла': {
+        'action': Interface.extract_single,
         'flags': {'help_about_exit': True},
         'help': [
             'Извлекает только одну страницу из PDF-файла.\n',
@@ -447,7 +479,7 @@ ACTIONS_MATRIX = {
             '– Затем введи номер страницы, которую хочешь извлечь.',
         ],
     },
-    'Склеить несколько PDF-файлов в один': {
+    ' Склеить несколько PDF-файлов в один': {
         'action': Interface.merge,
         'flags': {'help_about_exit': True},
         'help': [
@@ -457,17 +489,17 @@ ACTIONS_MATRIX = {
             '– В конце введи имя выходного PDF-файла.',
         ],
     },
-    'Помощь': {
-        'action': Interface.help,
+    ' Помощь': {
+        'action': Interface.draw_help,
         'flags': {'help_about_exit': False},
         'help': ['Выводит эту справку по функционалу.'],
     },
-    'О программе': {
-        'action': Interface.about,
+    ' О программе': {
+        'action': Interface.draw_about,
         'flags': {'help_about_exit': False},
         'help': ['Выводит информацию о программе и разработчике.'],
     },
-    'Выход': {'action': Interface.exit, 'flags': {'help_about_exit': False}, 'help': ['Завершает PDFer.']},
+    ' Выход': {'action': Interface.draw_exit, 'flags': {'help_about_exit': False}, 'help': ['Завершает PDFer.']},
 }
 
 MENU = list(ACTIONS_MATRIX.keys())[:-3] + [Separator()] + list(ACTIONS_MATRIX.keys())[-3:]

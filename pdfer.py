@@ -35,6 +35,7 @@ def import_or_install_module(module_name: str):
         globals()[module_name.replace('-', '_')] = importlib.import_module(module_name.replace('-', '_'))
 
 
+clear()
 import_or_install_module('inquirer')
 from inquirer.errors import ValidationError  # noqa: E402
 
@@ -174,7 +175,7 @@ class Interface:
         return wrapper
 
     @staticmethod
-    def start():  # type: ignore
+    def start():
         """Запускает интерфейс программы"""
         Interface.draw_header(full=True)
         questions = [

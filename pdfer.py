@@ -301,35 +301,33 @@ class Interface:
 
     @override_keyboard_interrupt
     @staticmethod
-    def merge():
+    def merge(not_enough: bool = False):
         """Интерфейс для склеивания нескольких PDF-файлов в один"""
-        not_enough = False
+        Interface.draw_header()
+        input_pdfs = []
+        if not_enough:
+            console.print('[on dark_red]Недостаточно PDF-файлов для склеивания![/on dark_red]', end='\n\n')
+            not_enough = False
         while True:
-            Interface.draw_header()
-            input_pdfs = []
-            if not_enough:
-                console.print('[on dark_red]Недостаточно PDF-файлов для склеивания![/on dark_red]', end='\n\n')
-                not_enough = False
-            while True:
-                input_pdf = Interface.get_pdf_file(
-                    True, f'Введи имя {len(input_pdfs) + 1}-го PDF-файла для склеивания: ', set(input_pdfs)
-                )
-                if input_pdf == 'exit':
-                    return Interface.start()
-                elif input_pdf:
-                    input_pdfs.append(input_pdf)
-                else:
-                    break
+            input_pdf = Interface.get_pdf_file(
+                True, f'Введи имя {len(input_pdfs) + 1}-го PDF-файла для склеивания: ', set(input_pdfs)
+            )
+            if input_pdf == 'exit':
+                return Interface.start()
+            if input_pdf:
+                input_pdfs.append(input_pdf)
+                continue
+            break
 
-            if len(input_pdfs) < 2:
-                not_enough = True
-            else:
-                break
+        if len(input_pdfs) < 2:
+            return merge(True)
+
         file_name = Interface.get_pdf_file(
             prompt_text='Введи имя выходного PDF-файла: ', completer_list=set(input_pdfs)
         )
         if not file_name:
             return Interface.start()
+
         if file_name == os.path.basename(file_name):
             base_path = os.path.dirname(input_pdfs[0])
             if all(os.path.dirname(file) == base_path for file in input_pdfs[1:]):
